@@ -366,7 +366,14 @@ async def main():
     host = settings.GAME_SERVER_HOST
     port = settings.GAME_SERVER_PORT
     logger.info(f"Game Server en ws://{host}:{port}")
-    async with websockets.serve(manejar_cliente, host, port):
+    async with websockets.serve(
+        manejar_cliente,
+        host,
+        port,
+        origins=None,
+        ping_interval=30,
+        ping_timeout=10,
+    ):
         await asyncio.Future()
 
 
