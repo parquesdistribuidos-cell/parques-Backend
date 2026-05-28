@@ -33,7 +33,16 @@ async def enviar(ws, msg: str):
 
 
 async def broadcast_sala(sala: Sala, msg: str, excluir_ws=None):
-    tareas = [enviar(j.websocket, msg) for j in sala.jugadores if j.websocket is not excluir_ws]
+    seen = set()
+    tareas = []
+    for j in sala.jugadores:
+        if j.websocket is excluir_ws:
+            continue
+        ws_id = id(j.websocket)
+        if ws_id in seen:
+            continue
+        seen.add(ws_id)
+        tareas.append(enviar(j.websocket, msg))
     if tareas:
         await asyncio.gather(*tareas, return_exceptions=True)
 
@@ -143,6 +152,7 @@ async def h_marcar_listo(ws, payload, user):
     if not sala:
         await enviar(ws, error("NO_EN_SALA", "No estás en ninguna sala"))
         return
+    should_start = False
     async with sala.lock:
         js = sala.buscar_jugador(user["usuario_id"])
         if not js.color:
@@ -150,12 +160,13 @@ async def h_marcar_listo(ws, payload, user):
             return
         js.listo = payload.get("listo", True)
         todos_listos = sala.todos_listos()
-        if todos_listos:
+        if todos_listos and sala.estado == ESTADO_ESPERANDO:
             sala.estado = ESTADO_EN_PARTIDA
+            should_start = True
 
     await broadcast_sala(sala, construir("SALA_ACTUALIZADA", sala.to_dict()))
 
-    if sala.estado == ESTADO_EN_PARTIDA:
+    if should_start:
         asyncio.create_task(_iniciar_partida(sala))
 
 
@@ -194,6 +205,8 @@ async def h_salir_sala(ws, payload, user):
     sala = sala_de(user["usuario_id"])
     if not sala:
         return
+    if sala.pin in partidas:
+        partidas[sala.pin].marcar_desconectado(user["usuario_id"])
     async with sala.lock:
         js = sala.buscar_jugador(user["usuario_id"])
         if js:

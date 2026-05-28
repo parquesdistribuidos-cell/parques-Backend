@@ -29,11 +29,16 @@ async def _enviar(ws, msg: str):
 
 
 async def _broadcast(jugadores: List[JugadorEnSala], msg: str, excluir_id: int = None):
-    tareas = [
-        _enviar(j.websocket, msg)
-        for j in jugadores
-        if j.usuario_id != excluir_id
-    ]
+    seen = set()
+    tareas = []
+    for j in jugadores:
+        if j.usuario_id == excluir_id:
+            continue
+        ws_id = id(j.websocket)
+        if ws_id in seen:
+            continue
+        seen.add(ws_id)
+        tareas.append(_enviar(j.websocket, msg))
     if tareas:
         await asyncio.gather(*tareas, return_exceptions=True)
 
