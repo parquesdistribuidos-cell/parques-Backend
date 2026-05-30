@@ -15,19 +15,19 @@ COLORES = ["rojo", "azul", "verde", "amarillo"]
 # === Casillas de salida por color ===
 # Cuando un jugador saca una ficha de la cárcel, va a esta casilla
 SALIDA_POR_COLOR = {
-    "rojo": 5,
-    "azul": 22,
-    "amarillo": 39,
-    "verde": 56,
+    "rojo": 56,
+    "azul": 5,
+    "amarillo": 22,
+    "verde": 39,
 }
 
 # === Entrada a la recta final por color ===
 # La última casilla del recorrido antes de entrar a la recta final
 ENTRADA_RECTA_FINAL = {
-    "rojo": 68,
-    "azul": 17,
-    "amarillo": 34,
-    "verde": 51,
+    "rojo": 51,
+    "azul": 68,
+    "amarillo": 17,
+    "verde": 34,
 }
 
 # === Casillas seguras del tablero ===

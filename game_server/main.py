@@ -120,7 +120,7 @@ async def h_agregar_bot(ws, payload, user):
             await enviar(ws, error("SIN_COLORES", "No hay colores disponibles"))
             return
         bot_id = -(len([j for j in sala.jugadores if j.es_bot]) + 1)
-        bot_nombre = payload.get("nombre", f"BOT_{len(sala.jugadores)+1}")
+        bot_nombre = sala.tomar_nombre_bot()
         js_bot = JugadorEnSala(bot_id, bot_nombre, ws, es_bot=True)
         js_bot.color = colores[0]
         js_bot.listo = True

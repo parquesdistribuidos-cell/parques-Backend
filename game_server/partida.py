@@ -6,10 +6,18 @@ Maneja: tirada inicial, turnos, dados, movimientos, chat, victoria.
 """
 import asyncio
 import logging
+import random
 import time
 from typing import Dict, List, Optional
 
-from .motor.constantes import COLORES
+from .motor.constantes import (
+    COLORES,
+    SALIDA_POR_COLOR,
+    ESTADO_CARCEL,
+    ESTADO_TABLERO,
+    ESTADO_META,
+    FICHAS_POR_JUGADOR,
+)
 from .motor.dados import Dados, ResultadoDados
 from .motor.gestor_turnos import GestorTurnos
 from .motor.jugador import Jugador
@@ -74,6 +82,9 @@ class Partida:
         self.dados_actuales: Optional[ResultadoDados] = None
         self.turno_numero: int = 0
         self.activa: bool = False
+        self.bot_delay_min = 2.0
+        self.bot_delay_max = 4.0
+        self.turnos_jugados: Dict[int, int] = {js.usuario_id: 0 for js in jugadores_sala}
 
         # Para esperar decisión del jugador
         self._esperando_movimiento: Optional[asyncio.Event] = None
@@ -192,6 +203,8 @@ class Partida:
         """Ejecuta el turno completo de un jugador."""
         self.turno_numero += 1
         retiene_turno = True
+        turnos_previos = self.turnos_jugados.get(jugador.id, 0)
+        es_primera_tirada_turno = True
         
         while retiene_turno and self.activa:
             retiene_turno = False
@@ -210,9 +223,29 @@ class Partida:
             )
 
             # Lanzar dados
-            dados = await self._lanzar_dados_turno(jugador, js)
-            if dados is None:
-                break
+            usa_tres_tiros = es_primera_tirada_turno and self._puede_tres_tiros(jugador, turnos_previos)
+            if usa_tres_tiros:
+                dados, hay_par = await self._lanzar_dados_hasta_par(jugador, js)
+                if dados is None:
+                    break
+                if not hay_par:
+                    jugador.pares_consecutivos = 0
+                    await _broadcast(
+                        self.jugadores_sala,
+                        construir("SIN_MOVIMIENTOS", {
+                            "jugador_id": jugador.id,
+                            "username": jugador.username,
+                            "dado_a": dados.valor_a,
+                            "dado_b": dados.valor_b,
+                        })
+                    )
+                    await asyncio.sleep(0.4)
+                    break
+            else:
+                dados = await self._lanzar_dados_turno(jugador, js)
+                if dados is None:
+                    break
+            es_primera_tirada_turno = False
 
             # Procesar pares
             resultado_pares = self.motor.procesar_pares(jugador, dados)
@@ -253,6 +286,7 @@ class Partida:
                 retiene_turno = True
                 await asyncio.sleep(0.5)
 
+        self.turnos_jugados[jugador.id] = turnos_previos + 1
         self.gestor.avanzar_turno()
 
     async def _lanzar_dados_turno(self, jugador: Jugador, js: JugadorEnSala) -> Optional[ResultadoDados]:
@@ -302,6 +336,32 @@ class Partida:
         await asyncio.sleep(0.3)
         return dados
 
+    async def _lanzar_dados_hasta_par(
+        self, jugador: Jugador, js: JugadorEnSala
+    ) -> tuple[Optional[ResultadoDados], bool]:
+        """Permite hasta 3 tiros en el mismo turno hasta sacar par."""
+        ultimo = None
+        for intento in range(3):
+            ultimo = await self._lanzar_dados_turno(jugador, js)
+            if ultimo is None:
+                return None, False
+            if ultimo.es_par:
+                return ultimo, True
+            if intento < 2:
+                await asyncio.sleep(0.4)
+        return ultimo, False
+
+    def _todas_en_carcel(self, jugador: Jugador) -> bool:
+        return len(jugador.fichas_en_carcel()) == FICHAS_POR_JUGADOR
+
+    def _puede_tres_tiros(self, jugador: Jugador, turnos_previos: int) -> bool:
+        if turnos_previos == 0:
+            return True
+        return self._todas_en_carcel(jugador)
+
+    async def _esperar_bot_movimiento(self):
+        await asyncio.sleep(random.uniform(self.bot_delay_min, self.bot_delay_max))
+
     async def _manejar_salida_carcel(self, jugador: Jugador, js: JugadorEnSala, dados: ResultadoDados):
         """Permite al jugador sacar fichas de la cárcel con pares."""
         fichas_en_carcel = jugador.fichas_en_carcel()
@@ -331,9 +391,9 @@ class Partida:
 
         if js.es_bot:
             # Bot elige según heurística
+            await self._esperar_bot_movimiento()
             from .bot_estrategia import elegir_movimiento_bot
             mov_elegido = elegir_movimiento_bot(movimientos, self.tablero, jugador)
-            await asyncio.sleep(0.6)
         else:
             # Pedir decisión al jugador humano
             await _enviar(

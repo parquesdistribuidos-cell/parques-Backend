@@ -5,6 +5,19 @@ import string
 from typing import Dict, List, Optional
 from .motor.constantes import COLORES
 
+BOT_NOMBRES = [
+    "Ana",
+    "Luis",
+    "Carlos",
+    "Maria",
+    "Juan",
+    "Sofia",
+    "Diego",
+    "Laura",
+    "Andres",
+    "Camila",
+]
+
 ESTADO_ESPERANDO = "ESPERANDO"
 ESTADO_EN_PARTIDA = "EN_PARTIDA"
 ESTADO_TERMINADA = "TERMINADA"
@@ -40,6 +53,7 @@ class Sala:
         self.jugadores: List[JugadorEnSala] = []
         self.lock = asyncio.Lock()
         self.max_jugadores = 4
+        self.bot_nombres_usados: set[str] = set()
 
     def esta_llena(self) -> bool:
         return len(self.jugadores) >= self.max_jugadores
@@ -50,6 +64,15 @@ class Sala:
 
     def buscar_jugador(self, usuario_id: int) -> Optional[JugadorEnSala]:
         return next((j for j in self.jugadores if j.usuario_id == usuario_id), None)
+
+    def tomar_nombre_bot(self) -> str:
+        disponibles = [n for n in BOT_NOMBRES if n not in self.bot_nombres_usados]
+        if not disponibles:
+            nombre = f"Invitado {len(self.bot_nombres_usados) + 1}"
+        else:
+            nombre = random.choice(disponibles)
+        self.bot_nombres_usados.add(nombre)
+        return nombre
 
     def todos_listos(self) -> bool:
         humanos = [j for j in self.jugadores if not j.es_bot]
