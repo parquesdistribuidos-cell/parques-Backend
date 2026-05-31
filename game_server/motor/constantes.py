@@ -6,7 +6,7 @@ El tablero estándar de parqués colombiano (4 jugadores) tiene:
 - 4 cárceles (una por color)
 - 4 rectas finales (una por color, 8 casillas cada una hacia la meta)
 - 4 salidas (casilla por donde sale cada color al tablero)
-- 12 casillas de seguro distribuidas
+- casillas de seguro distribuidas
 """
 
 # === Colores válidos ===
@@ -15,30 +15,25 @@ COLORES = ["rojo", "azul", "verde", "amarillo"]
 # === Casillas de salida por color ===
 # Cuando un jugador saca una ficha de la cárcel, va a esta casilla
 SALIDA_POR_COLOR = {
-    "rojo": 56,
-    "azul": 5,
-    "amarillo": 22,
-    "verde": 39,
+    "rojo": 27,
+    "azul": 10,
+    "amarillo": 61,
+    "verde": 44,
 }
 
 # === Entrada a la recta final por color ===
 # La última casilla del recorrido antes de entrar a la recta final
 ENTRADA_RECTA_FINAL = {
-    "rojo": 51,
-    "azul": 68,
-    "amarillo": 17,
-    "verde": 34,
+    "rojo": 32,
+    "azul": 15,
+    "amarillo": 66,
+    "verde": 49,
 }
 
 # === Casillas seguras del tablero ===
 # Incluyen las salidas (que también son seguras) y otras casillas marcadas
 CASILLAS_SEGURAS = {
-    # Salidas (son seguras)
-    5, 22, 39, 56,
-    # Seguros adicionales (12 + 4 = 16 especiales según el enunciado)
-    12, 17, 29, 34, 46, 51, 63, 68,
-    # Adicionales para llegar a 12 seguros
-    9, 26, 43, 60,
+    3, 10, 15, 20, 27, 32, 37, 44, 49, 54, 61, 66,
 }
 
 # === Tamaño de la recta final ===
