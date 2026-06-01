@@ -128,6 +128,71 @@ async def h_agregar_bot(ws, payload, user):
     await broadcast_sala(sala, construir("SALA_ACTUALIZADA", sala.to_dict()))
 
 
+async def h_simular_partida(ws, payload, user):
+    """Llena la sala con bots y arranca una partida automatizada."""
+    sala = sala_de(user["usuario_id"])
+    if not sala:
+        await enviar(ws, error("NO_EN_SALA", "No estás en ninguna sala"))
+        return
+
+    should_start = False
+    async with sala.lock:
+        if sala.estado != ESTADO_ESPERANDO:
+            await enviar(ws, error("SALA_EN_PARTIDA", "Partida en curso"))
+            return
+
+        js = sala.buscar_jugador(user["usuario_id"])
+        if not js:
+            await enviar(ws, error("NO_EN_SALA", "No estás en ninguna sala"))
+            return
+
+        otros_humanos = [
+            j for j in sala.jugadores
+            if not j.es_bot and j.usuario_id != user["usuario_id"]
+        ]
+        if otros_humanos:
+            await enviar(
+                ws,
+                error(
+                    "SIMULACION_NO_DISPONIBLE",
+                    "No puedes simular con otros jugadores humanos en la sala",
+                ),
+            )
+            return
+
+        js.es_bot = True
+        if not js.color:
+            colores = sala.colores_disponibles()
+            if not colores:
+                await enviar(ws, error("SIN_COLORES", "No hay colores disponibles"))
+                return
+            js.color = colores[0]
+
+        while len(sala.jugadores) < sala.max_jugadores:
+            colores = sala.colores_disponibles()
+            if not colores:
+                break
+            bot_id = -(len([j for j in sala.jugadores if j.es_bot]) + 1)
+            bot_nombre = sala.tomar_nombre_bot()
+            js_bot = JugadorEnSala(bot_id, bot_nombre, ws, es_bot=True)
+            js_bot.color = colores[0]
+            js_bot.listo = True
+            sala.jugadores.append(js_bot)
+
+        colores_restantes = sala.colores_disponibles()
+        for j in sala.jugadores:
+            if not j.color and colores_restantes:
+                j.color = colores_restantes.pop(0)
+            j.listo = True
+
+        sala.estado = ESTADO_EN_PARTIDA
+        should_start = True
+
+    await broadcast_sala(sala, construir("SALA_ACTUALIZADA", sala.to_dict()))
+    if should_start:
+        asyncio.create_task(_iniciar_partida(sala))
+
+
 async def h_elegir_color(ws, payload, user):
     sala = sala_de(user["usuario_id"])
     if not sala:
@@ -286,6 +351,7 @@ HANDLERS = {
     "CREAR_SALA": h_crear_sala,
     "UNIRSE_SALA": h_unirse_sala,
     "AGREGAR_BOT": h_agregar_bot,
+    "SIMULAR_PARTIDA": h_simular_partida,
     "ELEGIR_COLOR": h_elegir_color,
     "MARCAR_LISTO": h_marcar_listo,
     "ENVIAR_CHAT": h_chat,

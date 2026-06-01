@@ -8,6 +8,7 @@ import asyncio
 import logging
 import random
 import time
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from .motor.constantes import (
@@ -25,6 +26,8 @@ from .motor.reglas import MotorReglas
 from .motor.tablero import Tablero
 from .protocolo import construir, error
 from .sala import JugadorEnSala
+from api.models import Partida as PartidaDB, Participacion as ParticipacionDB
+from shared.db import AsyncSessionLocal
 
 logger = logging.getLogger("game_server.partida")
 
@@ -82,9 +85,13 @@ class Partida:
         self.dados_actuales: Optional[ResultadoDados] = None
         self.turno_numero: int = 0
         self.activa: bool = False
-        self.bot_delay_min = 2.0
-        self.bot_delay_max = 4.0
+        # self.bot_delay_min = 3.0
+        # self.bot_delay_max = 6.0
+        self.bot_delay_min = 0.5
+        self.bot_delay_max = 1.0
         self.turnos_jugados: Dict[int, int] = {js.usuario_id: 0 for js in jugadores_sala}
+        self.partida_db_id: Optional[int] = None
+        self._inicio_ts = time.time()
 
         # Para esperar decisión del jugador
         self._esperando_movimiento: Optional[asyncio.Event] = None
@@ -102,6 +109,8 @@ class Partida:
         self.activa = True
         logger.info(f"Partida {self.partida_id} iniciando con {len(self.jugadores)} jugadores")
 
+        await self._guardar_partida_inicio()
+
         # 1. Berkeley
         await self._ejecutar_berkeley()
 
@@ -116,6 +125,30 @@ class Partida:
         bk = Berkeley()
         offsets = await bk.sincronizar(self.jugadores_sala)
         logger.info(f"Berkeley offsets: {offsets}")
+
+    async def _guardar_partida_inicio(self):
+        """Registra la partida en BD para estadísticas y ranking."""
+        try:
+            async with AsyncSessionLocal() as session:
+                partida = PartidaDB(estado="en_curso", fecha_inicio=datetime.now(timezone.utc))
+                session.add(partida)
+                await session.flush()
+
+                for js in self.jugadores_sala:
+                    if js.usuario_id <= 0:
+                        continue
+                    session.add(
+                        ParticipacionDB(
+                            partida_id=partida.id,
+                            usuario_id=js.usuario_id,
+                            color=js.color or "",
+                        )
+                    )
+
+                await session.commit()
+                self.partida_db_id = partida.id
+        except Exception as exc:
+            logger.warning(f"No se pudo guardar la partida en BD: {exc}")
 
     async def _tirada_inicial(self):
         """Cada jugador tira un dado para determinar quién empieza."""
@@ -197,6 +230,7 @@ class Partida:
                 return
 
         logger.warning(f"Partida {self.partida_id} terminó por límite de turnos")
+        await self._guardar_partida_fin(ganador=None, estado="abandonada")
         self.activa = False
 
     async def _ejecutar_turno(self, jugador: Jugador, js: JugadorEnSala):
@@ -292,7 +326,7 @@ class Partida:
     async def _lanzar_dados_turno(self, jugador: Jugador, js: JugadorEnSala) -> Optional[ResultadoDados]:
         """Espera a que el jugador lance los dados (o el bot lo hace automático)."""
         if js.es_bot:
-            await asyncio.sleep(0.8)  # Pausa visual del bot
+            # await asyncio.sleep(1.2)  # Pausa visual del bot
             dados = self.dados.lanzar()
         else:
             # Esperar mensaje LANZAR_DADOS del cliente
@@ -509,6 +543,7 @@ class Partida:
     async def _finalizar(self, ganador: Jugador):
         self.activa = False
         logger.info(f"Partida {self.partida_id} ganada por {ganador.username}")
+        await self._guardar_partida_fin(ganador=ganador, estado="terminada")
         await _broadcast(
             self.jugadores_sala,
             construir("PARTIDA_TERMINADA", {
@@ -525,6 +560,23 @@ class Partida:
                 }
             })
         )
+
+    async def _guardar_partida_fin(self, ganador: Optional[Jugador], estado: str):
+        if not self.partida_db_id:
+            return
+        try:
+            async with AsyncSessionLocal() as session:
+                partida = await session.get(PartidaDB, self.partida_db_id)
+                if not partida:
+                    return
+                partida.fecha_fin = datetime.now(timezone.utc)
+                partida.estado = estado
+                if ganador and ganador.id > 0:
+                    partida.ganador_id = ganador.id
+                partida.duracion_seg = int(time.time() - self._inicio_ts)
+                await session.commit()
+        except Exception as exc:
+            logger.warning(f"No se pudo actualizar la partida en BD: {exc}")
 
     # ============================================
     # Recepción de mensajes del cliente
