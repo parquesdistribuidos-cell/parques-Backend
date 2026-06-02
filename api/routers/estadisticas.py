@@ -1,6 +1,6 @@
 """Estadísticas y ranking."""
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from api.models import Partida, Participacion, Usuario
 from shared.db import get_db
@@ -14,7 +14,7 @@ async def ranking(db: AsyncSession = Depends(get_db)):
             Usuario.username,
             func.count(Partida.id).label("partidas_jugadas"),
             func.sum(
-                func.cast(Partida.ganador_id == Usuario.id, type_=func.Integer.__class__)
+                cast(Partida.ganador_id == Usuario.id, Integer)
             ).label("victorias"),
         )
         .join(Participacion, Participacion.usuario_id == Usuario.id)
