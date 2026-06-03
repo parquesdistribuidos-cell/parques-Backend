@@ -298,23 +298,24 @@ class Partida:
                 await self._manejar_salida_carcel(jugador, js, dados)
 
             # Movimientos normales
-            movs = self.motor.calcular_movimientos_legales(self.tablero, jugador, dados)
-
-            if not movs:
-                await _broadcast(
-                    self.jugadores_sala,
-                    construir("SIN_MOVIMIENTOS", {
+            # DESPUÉS — hasta dos movimientos independientes si los dados son distintos
+            if dados.es_par:
+                # Con par: un solo movimiento con la suma (comportamiento actual)
+                movs = self.motor.calcular_movimientos_legales(self.tablero, jugador, dados)
+                if not movs:
+                    await _broadcast(self.jugadores_sala, construir("SIN_MOVIMIENTOS", {
                         "jugador_id": jugador.id,
                         "username": jugador.username,
                         "dado_a": dados.valor_a,
                         "dado_b": dados.valor_b,
-                    })
-                )
-                # Consumir oportunidad si solo tiene fichas en cárcel
-                if not jugador.fichas_jugables():
-                    self.motor.consumir_oportunidad_salida(jugador)
+                    }))
+                    if not jugador.fichas_jugables():
+                        self.motor.consumir_oportunidad_salida(jugador)
+                else:
+                    await self._pedir_y_aplicar_movimiento(jugador, js, dados, movs)
             else:
-                await self._pedir_y_aplicar_movimiento(jugador, js, dados, movs)
+                # Sin par: dos movimientos separados, uno por dado
+                await self._ejecutar_dos_movimientos(jugador, js, dados)
 
             # Broadcast estado
             await self._broadcast_estado()
@@ -642,3 +643,52 @@ class Partida:
                 }
             })
         )
+
+    async def _ejecutar_dos_movimientos(
+        self, jugador: Jugador, js: JugadorEnSala, dados: ResultadoDados
+    ):
+        """
+        Permite mover con dado_a y dado_b de forma independiente,
+        en fichas distintas o la misma. El jugador elige el orden.
+        """
+        dados_restantes = [
+            ("a", dados.valor_a),
+            ("b", dados.valor_b),
+        ]
+
+        for i, (nombre_dado, valor_dado) in enumerate(dados_restantes):
+            # Recalcular movimientos legales solo con el dado actual
+            from .motor.dados import ResultadoDados as RD
+            dados_parcial = type(dados)(valor_a=valor_dado, valor_b=0)
+            # Usamos el motor directamente filtrando por dado
+            movs = [
+                m for m in self.motor.calcular_movimientos_legales(
+                    self.tablero, jugador, dados
+                )
+                if m.dado == nombre_dado
+            ]
+
+            if not movs:
+                await _broadcast(self.jugadores_sala, construir("SIN_MOVIMIENTOS", {
+                    "jugador_id": jugador.id,
+                    "username": jugador.username,
+                    "dado_a": valor_dado if nombre_dado == "a" else 0,
+                    "dado_b": valor_dado if nombre_dado == "b" else 0,
+                    "dado_parcial": nombre_dado,
+                }))
+                await asyncio.sleep(0.4)
+                continue
+
+            # Informar al jugador qué dado debe usar ahora
+            await _broadcast(self.jugadores_sala, construir("TURNO_PARCIAL", {
+                "jugador_id": jugador.id,
+                "username": jugador.username,
+                "dado": nombre_dado,
+                "valor": valor_dado,
+                "movimiento_numero": i + 1,
+                "total_movimientos": 2,
+            }))
+
+            await self._pedir_y_aplicar_movimiento(jugador, js, dados, movs)
+            await self._broadcast_estado()
+            await asyncio.sleep(0.3)

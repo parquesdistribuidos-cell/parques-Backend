@@ -146,19 +146,21 @@ class MotorReglas:
         jugador: Jugador,
         dados: ResultadoDados,
     ) -> List[MovimientoLegal]:
-        """
-        Devuelve TODOS los movimientos legales posibles con los dados actuales.
-
-        Si la lista está vacía, el jugador debe pasar (no puede mover).
-        """
         movimientos: List[MovimientoLegal] = []
 
-        # Cada dado por separado, más la suma (movimiento de 1 ficha sumando)
-        valores = [
-            ("a", dados.valor_a),
-            ("b", dados.valor_b),
-            ("suma", dados.suma),
-        ]
+        # Si es par: un movimiento con la suma completa
+        # Si no es par: cada dado por separado (sin suma)
+        if dados.es_par:
+            valores = [
+                ("a", dados.valor_a),
+                ("b", dados.valor_b),
+                ("suma", dados.suma),
+            ]
+        else:
+            valores = [
+                ("a", dados.valor_a),
+                ("b", dados.valor_b),
+            ]
 
         for f in jugador.fichas_jugables():
             for nombre_dado, valor in valores:
