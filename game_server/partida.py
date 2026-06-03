@@ -160,7 +160,7 @@ class Partida:
                 "jugador_id": None,
             })
         )
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(2.0)
 
         tiradas = {}
         for js in self.jugadores_sala:
