@@ -219,6 +219,10 @@ class Partida:
             js = self._buscar_js(jid)
             if js is None or js.desconectado:
                 self.gestor.avanzar_turno()
+                ganador_abandono = self._ganador_por_abandono()
+                if ganador_abandono:
+                    await self._finalizar_por_abandono(ganador_abandono)
+                    return
                 continue
 
             await self._ejecutar_turno(jugador, js)
@@ -239,7 +243,7 @@ class Partida:
         retiene_turno = True
         turnos_previos = self.turnos_jugados.get(jugador.id, 0)
         es_primera_tirada_turno = True
-        
+
         while retiene_turno and self.activa:
             retiene_turno = False
 
@@ -603,3 +607,38 @@ class Partida:
         jugador = self.jugadores.get(usuario_id)
         if jugador:
             jugador.desconectado = True
+
+
+    def _ganador_por_abandono(self) -> Optional[Jugador]:
+        """Retorna el único jugador activo si todos los demás se desconectaron."""
+        activos = [
+            j for j in self.jugadores.values()
+            if not j.desconectado
+        ]
+        if len(activos) == 1:
+            return activos[0]
+        return None
+
+    async def _finalizar_por_abandono(self, ganador: Jugador):
+        self.activa = False
+        logger.info(
+            f"Partida {self.partida_id} ganada por abandono: {ganador.username}"
+        )
+        await self._guardar_partida_fin(ganador=ganador, estado="terminada")
+        await _broadcast(
+            self.jugadores_sala,
+            construir("PARTIDA_TERMINADA", {
+                "ganador_id": ganador.id,
+                "ganador_username": ganador.username,
+                "ganador_color": ganador.color,
+                "tablero": self.tablero.to_dict(),
+                "motivo": "abandono",
+                "estadisticas": {
+                    str(uid): {
+                        "fichas_en_meta": len(j.fichas_en_meta()),
+                        "pares_totales": j.pares_consecutivos,
+                    }
+                    for uid, j in self.jugadores.items()
+                }
+            })
+        )
