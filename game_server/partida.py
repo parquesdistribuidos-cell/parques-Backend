@@ -160,7 +160,7 @@ class Partida:
                 "jugador_id": None,
             })
         )
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(0.5)
 
         tiradas = {}
         for js in self.jugadores_sala:
@@ -196,6 +196,7 @@ class Partida:
             })
         )
         logger.info(f"Primer turno: {jugador_primer.username}")
+        await asyncio.sleep(2.0)
 
     # ============================================
     # Loop principal
